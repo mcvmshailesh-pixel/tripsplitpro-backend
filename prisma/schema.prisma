@@ -1,0 +1,271 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------
+// 1. USER & FRIENDS
+// -----------------------------------------------------
+model User {
+  id                 String   @id @default(uuid())
+  name               String
+  email              String   @unique
+  mobile             String?
+  passwordHash       String
+  upiId              String?
+  avatarUrl          String?
+  role               String   @default("USER")
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relationships
+  createdTrips        Trip[]                 @relation("TripCreator")
+  tripMemberships     TripMember[]
+  expensesPaid        Expense[]              @relation("PaidBy")
+  expenseShares       ExpenseShare[]
+  sentSettlements     Settlement[]           @relation("Payer")
+  receivedSettlements Settlement[]           @relation("Payee")
+  
+  // Self-referencing many-to-many relationship for Friends Network
+  friends             Friendship[]           @relation("UserFriends")
+  friendOf            Friendship[]           @relation("FriendUsers")
+
+  // New Relationships
+  advances             Advance[]
+  pettyCashHolder      PettyCashTransaction[] @relation("CashHolder")
+  pettyCashFunded      PettyCashTransaction[] @relation("Funder")
+  passwordRequests     PasswordResetRequest[]
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  expensePayments      ExpensePayer[]
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
+  createdAt DateTime @default(now())
+
+  user      User     @relation("UserFriends", fields: [userId], references: [id])
+  friend    User     @relation("FriendUsers", fields: [friendId], references: [id])
+
+  @@unique([userId, friendId]) // Prevent duplicate friend requests
+}
+
+// -----------------------------------------------------
+// 2. TRIPS
+// -----------------------------------------------------
+model Trip {
+  id          String    @id @default(uuid())
+  name        String
+  destination String?
+  startDate   DateTime?
+  endDate     DateTime?
+  description String?
+  currency    String    @default("INR")
+  coverImage  String?
+  creatorId   String
+  budget      Float?
+  status      String    @default("ACTIVE") // ACTIVE, CLOSED
+  createdAt   DateTime  @default(now())
+
+  creator     User                   @relation("TripCreator", fields: [creatorId], references: [id])
+  members     TripMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+  advances    Advance[]
+  pettyCash   PettyCashTransaction[]
+}
+
+model TripMember {
+  id        String   @id @default(uuid())
+  tripId    String
+  userId    String
+  joinedAt  DateTime @default(now())
+
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, userId]) // A user can only join a trip once
+}
+
+// -----------------------------------------------------
+// 3. EXPENSES & SPLITS
+// -----------------------------------------------------
+enum SplitMethod {
+  EQUAL
+  PERCENTAGE
+  WEIGHT
+  CUSTOM
+  QUANTITY
+  UNEQUAL
+}
+
+model Expense {
+  id          String      @id @default(uuid())
+  tripId      String
+  paidById    String      // Main payer / fallback
+  amount      Float
+  description String
+  category    String      @default("Misc")
+  date        DateTime    @default(now())
+  splitMethod SplitMethod @default(EQUAL)
+  receiptUrl  String?
+  createdAt   DateTime    @default(now())
+
+  trip        Trip                   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  paidBy      User                   @relation("PaidBy", fields: [paidById], references: [id])
+  shares      ExpenseShare[]
+  payers      ExpensePayer[]
+  pettyCash   PettyCashTransaction[]
+}
+
+// This table records exactly how much each person owes for a specific expense
+model ExpenseShare {
+  id          String   @id @default(uuid())
+  expenseId   String
+  userId      String
+  amountOwed  Float
+  metadata    String?  // Store percentages, weights, or quantity information (e.g. "quantity: 2")
+
+  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+// Support for Paid By Multiple Members
+model ExpensePayer {
+  id         String   @id @default(uuid())
+  expenseId  String
+  userId     String
+  amountPaid Float
+
+  expense    Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([expenseId, userId])
+}
+
+// -----------------------------------------------------
+// 4. SETTLEMENTS (Who pays whom)
+// -----------------------------------------------------
+model Settlement {
+  id          String   @id @default(uuid())
+  tripId      String
+  payerId     String
+  payeeId     String
+  amount      Float
+  status      String   @default("PENDING") // PENDING, COMPLETED
+  createdAt   DateTime @default(now())
+
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  payer       User     @relation("Payer", fields: [payerId], references: [id])
+  payee       User     @relation("Payee", fields: [payeeId], references: [id])
+}
+
+// -----------------------------------------------------
+// 5. ADVANCES
+// -----------------------------------------------------
+model Advance {
+  id              String   @id @default(uuid())
+  tripId          String
+  userId          String
+  amount          Float
+  date            DateTime @default(now())
+  paymentMode     String
+  referenceNumber String?
+  notes           String?
+  currency        String   @default("INR")
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trip            Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+// -----------------------------------------------------
+// 6. PETTY CASH
+// -----------------------------------------------------
+model PettyCashTransaction {
+  id              String   @id @default(uuid())
+  tripId          String
+  cashHolderId    String
+  fundedById      String?
+  date            DateTime @default(now())
+  amountAdded     Float    @default(0)
+  amountWithdrawn Float    @default(0)
+  purpose         String
+  expenseId       String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trip            Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  cashHolder      User     @relation("CashHolder", fields: [cashHolderId], references: [id])
+  fundedBy        User?    @relation("Funder", fields: [fundedById], references: [id])
+  expense         Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+}
+
+// -----------------------------------------------------
+// 7. CATEGORIES
+// -----------------------------------------------------
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  icon      String   @default("folder")
+  color     String   @default("#6c757d")
+  sortOrder Int      @default(0)
+  isEnabled Boolean  @default(true)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// -----------------------------------------------------
+// 8. PASSWORD RESET REQUESTS
+// -----------------------------------------------------
+model PasswordResetRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  adminNotes  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------
+// 9. AUDIT LOGS
+// -----------------------------------------------------
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  userId    String?
+  details   String
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+// -----------------------------------------------------
+// 10. NOTIFICATIONS
+// -----------------------------------------------------
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO, WARNING, SUCCESS
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

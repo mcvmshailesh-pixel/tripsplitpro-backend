@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: tripsplitpro-backend
+    env: node
+    plan: free
+    buildCommand: npm install && npx prisma generate
+    startCommand: npx prisma db push && node server.js
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tripsplitpro-db
+          property: connectionString
+
+databases:
+  - name: tripsplitpro-db
+    plan: free
