@@ -57,6 +57,10 @@ app.use('/api/notifications', notificationRoutes);
 const categoryRoutes = require('./routes/categories');
 app.use('/api/categories', categoryRoutes);
 
+// Connect the Locations & Destinations Routes
+const locationRoutes = require('./routes/locations');
+app.use('/api/locations', locationRoutes);
+
 
 // Start the Server
 const PORT = process.env.PORT || 5000;

@@ -303,7 +303,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
       where: { id },
       include: {
         creator: { select: { id: true, name: true, email: true } },
-        members: { include: { user: { select: { id: true, name: true, email: true } } } }
+        members: { include: { user: { select: { id: true, name: true, email: true } } } },
+        destinations: { orderBy: [{ order: 'asc' }, { plannedDate: 'asc' }, { createdAt: 'asc' }] },
+        memberLocations: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } }
       }
     });
 

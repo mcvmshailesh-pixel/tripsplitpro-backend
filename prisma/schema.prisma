@@ -45,6 +45,7 @@ model User {
   auditLogs            AuditLog[]
   notifications        Notification[]
   expensePayments      ExpensePayer[]
+  memberLocations      MemberLocation[]
 }
 
 model Friendship {
@@ -82,6 +83,8 @@ model Trip {
   settlements Settlement[]
   advances    Advance[]
   pettyCash   PettyCashTransaction[]
+  destinations TripDestination[]
+  memberLocations MemberLocation[]
 }
 
 model TripMember {
@@ -268,4 +271,48 @@ model Notification {
   createdAt DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------
+// 11. TRIP DESTINATIONS & WAYPOINTS
+// -----------------------------------------------------
+model TripDestination {
+  id          String    @id @default(uuid())
+  tripId      String
+  name        String
+  category    String    @default("Attraction") // Hotel, Food, Attraction, Transit, MeetingPoint, Other
+  latitude    Float
+  longitude   Float
+  address     String?
+  notes       String?
+  plannedDate DateTime?
+  visited     Boolean   @default(false)
+  order       Int       @default(0)
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------
+// 12. LIVE MEMBER LOCATION SHARING
+// -----------------------------------------------------
+model MemberLocation {
+  id            String   @id @default(uuid())
+  tripId        String
+  userId        String
+  latitude      Float
+  longitude     Float
+  accuracy      Float?
+  statusMessage String?
+  isSharing     Boolean  @default(true)
+  batteryLevel  Float?
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  trip          Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, userId])
 }
